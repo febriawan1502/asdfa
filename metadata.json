@@ -1,0 +1,5 @@
+{
+  "name": "Warehouse Material Pro",
+  "description": "A comprehensive material management system for warehouses featuring inbound/outbound tracking, real-time stock monitoring, and printable transaction summaries.",
+  "requestFramePermissions": []
+}
