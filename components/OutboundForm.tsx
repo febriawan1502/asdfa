@@ -1,8 +1,8 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { db } from '../db';
 import { Material, OutboundTransaction, VehicleType } from '../types';
-import { FileText, Save, CheckCircle2, Plus, Trash2, PackageSearch, Clipboard, Hash, User, Truck, CreditCard, FileCode } from 'lucide-react';
+import { FileText, Save, CheckCircle2, Plus, Trash2, PackageSearch, Clipboard, Hash, User, Truck, CreditCard, FileCode, Search, ChevronDown } from 'lucide-react';
 import TransactionDocument from './TransactionDocument';
 
 interface LineItem {
@@ -21,7 +21,10 @@ const OutboundForm: React.FC<{ onComplete: () => void }> = ({ onComplete }) => {
   const [showDoc, setShowDoc] = useState(false);
   const [lastTransactions, setLastTransactions] = useState<OutboundTransaction[]>([]);
   
-  const [selectedMaterialId, setSelectedMaterialId] = useState('');
+  const [selectedMaterial, setSelectedMaterial] = useState<Material | null>(null);
+  const [materialSearch, setMaterialSearch] = useState('');
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
   const [currentVolume, setCurrentVolume] = useState<number>(0);
 
   const [formData, setFormData] = useState({
@@ -38,32 +41,51 @@ const OutboundForm: React.FC<{ onComplete: () => void }> = ({ onComplete }) => {
 
   useEffect(() => {
     setMaterials(db.getMaterials());
+
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const addItem = () => {
-    const mat = materials.find(m => m.id === selectedMaterialId);
-    if (!mat || currentVolume <= 0) return;
+  const filteredMaterials = materials.filter(m => 
+    m.material_name.toLowerCase().includes(materialSearch.toLowerCase()) ||
+    m.material_number.toLowerCase().includes(materialSearch.toLowerCase())
+  );
 
-    if (items.some(i => i.material_id === mat.id)) {
+  const selectMaterial = (mat: Material) => {
+    setSelectedMaterial(mat);
+    setMaterialSearch(`${mat.material_number} - ${mat.material_name}`);
+    setIsDropdownOpen(false);
+  };
+
+  const addItem = () => {
+    if (!selectedMaterial || currentVolume <= 0) return;
+
+    if (items.some(i => i.material_id === selectedMaterial.id)) {
       alert("Material sudah ada di list.");
       return;
     }
 
-    if (currentVolume > mat.current_stock) {
-      alert(`Stok tidak cukup! Hanya tersedia ${mat.current_stock}.`);
+    if (currentVolume > selectedMaterial.current_stock) {
+      alert(`Stok tidak cukup! Hanya tersedia ${selectedMaterial.current_stock}.`);
       return;
     }
 
     setItems([...items, {
-      material_id: mat.id,
-      material_number: mat.material_number,
-      material_name: mat.material_name,
-      unit: mat.unit,
+      material_id: selectedMaterial.id,
+      material_number: selectedMaterial.material_number,
+      material_name: selectedMaterial.material_name,
+      unit: selectedMaterial.unit,
       volume_out: currentVolume,
-      available_stock: mat.current_stock
+      available_stock: selectedMaterial.current_stock
     }]);
 
-    setSelectedMaterialId('');
+    setSelectedMaterial(null);
+    setMaterialSearch('');
     setCurrentVolume(0);
   };
 
@@ -236,20 +258,50 @@ const OutboundForm: React.FC<{ onComplete: () => void }> = ({ onComplete }) => {
               Item Material Yang Dikeluarkan
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end bg-indigo-50/30 p-6 rounded-2xl border border-indigo-100 border-dashed">
-              <div className="md:col-span-7 space-y-1.5">
-                <label className="text-[10px] font-black text-indigo-600 uppercase tracking-widest ml-1">Cari Material Katalog</label>
-                <select
-                  value={selectedMaterialId}
-                  onChange={e => setSelectedMaterialId(e.target.value)}
-                  className="w-full px-4 py-3 bg-white border border-indigo-200 rounded-xl focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none text-sm font-bold text-slate-900"
-                >
-                  <option value="">-- Pilih Barang --</option>
-                  {materials.map(m => (
-                    <option key={m.id} value={m.id}>
-                      {m.material_number} - {m.material_name} (Stok: {m.current_stock})
-                    </option>
-                  ))}
-                </select>
+              <div className="md:col-span-7 space-y-1.5 relative" ref={dropdownRef}>
+                <label className="text-[10px] font-black text-indigo-600 uppercase tracking-widest ml-1">Cari Material (Normalisasi/Nama)</label>
+                <div className="relative">
+                  <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-indigo-400" />
+                  <input
+                    type="text"
+                    value={materialSearch}
+                    onChange={(e) => {
+                      setMaterialSearch(e.target.value);
+                      setIsDropdownOpen(true);
+                      if (!e.target.value) setSelectedMaterial(null);
+                    }}
+                    onFocus={() => setIsDropdownOpen(true)}
+                    placeholder="Ketik kode normalisasi atau nama material..."
+                    className="w-full pl-10 pr-10 py-3 bg-white border border-indigo-200 rounded-xl focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none text-sm font-bold text-slate-900"
+                  />
+                  <ChevronDown className={`w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 text-indigo-400 transition-transform duration-200 ${isDropdownOpen ? 'rotate-180' : ''}`} />
+                </div>
+                
+                {isDropdownOpen && filteredMaterials.length > 0 && (
+                  <div className="absolute z-50 w-full mt-2 bg-white border border-slate-200 rounded-2xl shadow-2xl max-h-60 overflow-y-auto custom-scrollbar animate-in fade-in slide-in-from-top-2">
+                    {filteredMaterials.map(m => (
+                      <button
+                        key={m.id}
+                        type="button"
+                        onClick={() => selectMaterial(m)}
+                        className="w-full text-left px-5 py-3 hover:bg-indigo-50 transition-colors border-b border-slate-50 last:border-0 group"
+                      >
+                        <div className="flex justify-between items-center">
+                          <span className="text-[10px] font-black text-indigo-600 font-mono tracking-wider">{m.material_number}</span>
+                          <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${m.current_stock > 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
+                            Stok: {m.current_stock} {m.unit}
+                          </span>
+                        </div>
+                        <p className="text-xs font-bold text-slate-800 mt-1 uppercase group-hover:text-indigo-700 transition-colors">{m.material_name}</p>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {isDropdownOpen && filteredMaterials.length === 0 && (
+                  <div className="absolute z-50 w-full mt-2 bg-white border border-slate-200 rounded-2xl shadow-2xl p-6 text-center text-slate-400 text-xs italic">
+                    Material tidak ditemukan.
+                  </div>
+                )}
               </div>
               <div className="md:col-span-3 space-y-1.5">
                 <label className="text-[10px] font-black text-indigo-600 uppercase tracking-widest ml-1">Volume</label>
@@ -266,7 +318,7 @@ const OutboundForm: React.FC<{ onComplete: () => void }> = ({ onComplete }) => {
                 <button
                   type="button"
                   onClick={addItem}
-                  disabled={!selectedMaterialId || currentVolume <= 0}
+                  disabled={!selectedMaterial || currentVolume <= 0}
                   className="w-full py-3 bg-indigo-600 text-white rounded-xl text-sm font-black hover:bg-indigo-700 transition-all flex items-center justify-center gap-2 disabled:opacity-50 shadow-lg shadow-indigo-200"
                 >
                   <Plus className="w-4 h-4" /> TAMBAH
